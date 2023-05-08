@@ -22,10 +22,6 @@ const Post = sequelize.define('post', {
     allowNull: false,
     default: 0
   }
-},
-{
-  required: true,
-  duplicating: false
 });
 
 module.exports = Post;
