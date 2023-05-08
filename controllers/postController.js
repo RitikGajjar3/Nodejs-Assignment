@@ -1,6 +1,10 @@
 const Post = require('../models/post');
 const Comment = require('../models/comment');
 const postValidation = require('../validation/postValidation');
+const sequelize = require('../util/database');
+// const Sequelize = require('sequelize');
+const { Op } = require('sequelize');
+
 
 exports.createPost = async (req, res, next) => {
 
@@ -50,39 +54,40 @@ exports.getPosts = async (req, res, next) => {
 
     try {
         // 2. Fetch the data from database 
-        const result = await Post.findAndCountAll({
+        const result = await Post.findAll({
             limit: pageSize,
             offset: (pageNo - 1) * pageSize,
             order: [['createdAt', 'DESC']],
-            attributes: ['id', 'title', 'description', 'createdAt'],
-            include: [{
-                model: Comment,
-                required: false,
-                attributes: [],
-                where: {
-                    parentId: -1                // ParentId -1 means first level of posts
-                }
-            }],
-            group: ['post.id']
+            attributes: ['id', 'title', 'description', 'createdAt']
         });
         
-        // 3. Create a map of postCount by postId
-        const postCountsMap = {};
-        result.count.forEach(postCount => {
-            postCountsMap[postCount.id] = postCount.count;
+        // 3. Extract the postIds
+        const postIds = result.map(post => post.id);
+        console.log("PostIds - ",postIds);
+
+        // 4. Get level one comment counts by postId
+        const commentCounts = await Comment.findAll({
+            where: { parentId: -1, postId: postIds },                   // parentId : -1 for level 1 comment 
+            attributes: ['postId', [sequelize.fn('count', sequelize.col('id')), 'count']],
+            group: ['postId']
         });
-        console.log('postCountsMap - ',postCountsMap);
-      
-        // 4. Return the Response 
+
+        // 5. Create Map of PostId to comment counts 
+        const commentCountsByPostIdMap = {};
+        commentCounts.forEach(commentCount => {
+            commentCountsByPostIdMap[commentCount.postId] = commentCount.get('count');
+        });
+
+        // 6. Return the Response 
         res.status(200).json({
             pageNo: pageNo,
             pageSize: pageSize,
-            posts: result.rows.map(post => ({
+            posts: result.map(post => ({
                 id: post.id,
                 title: post.title,
                 createdAt: post.createdAt,
                 description: post.description,
-                levelOneCommentsCount: postCountsMap[post.id]
+                levelOneCommentsCount: commentCountsByPostIdMap[post.id] || 0
             }))
         });
     } catch (error) {
